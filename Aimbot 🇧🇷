@@ -1,0 +1,489 @@
+-- ╔══════════════════════════════════════════════╗
+-- ║   🇧🇷 AIMBOT BRASILEIRO v2.0 — by hakk406  ║
+-- ║   UI customizada — sem biblioteca externa    ║
+-- ╚══════════════════════════════════════════════╝
+
+-- ================================================
+--  SERVIÇOS
+-- ================================================
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local VirtualUser      = game:GetService("VirtualUser")
+local Camera           = workspace.CurrentCamera
+local LocalPlayer      = Players.LocalPlayer
+local PlayerGui        = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ================================================
+--  PALETA DE CORES
+-- ================================================
+local CoreColors = {
+    Branco   = Color3.fromRGB(255, 255, 255),
+    Vermelho = Color3.fromRGB(255, 0, 0),
+    Verde    = Color3.fromRGB(0, 255, 0),
+    Azul     = Color3.fromRGB(0, 0, 255),
+    Amarelo  = Color3.fromRGB(255, 255, 0),
+    Rosa     = Color3.fromRGB(255, 20, 147),
+    Roxo     = Color3.fromRGB(138, 43, 226),
+    Ciano    = Color3.fromRGB(0, 255, 255),
+}
+
+-- ================================================
+--  CONFIGURAÇÕES
+-- ================================================
+local Cfg = {
+    Aimbot            = false,
+    HitboxExtender    = false,
+    HitboxSize        = 2,
+    AimPart           = "Head",
+    FOVSize           = 70,
+    ShowFOV           = true,
+    FOVColor          = Color3.fromRGB(255, 255, 255),
+    SelectedColorName = "Branco",
+    Smoothing         = 0.08,
+    TargetMode        = "Todos",
+    SelectedPlayer    = "",
+    TeamCheck         = true,
+    VisibleCheck      = true,
+    EspName           = false,
+    EspBox            = false,
+    EspHealth         = false,
+    EspSkeleton       = false,
+    AntiAfk           = false,
+    Crosshair         = false,
+    CrosshairType     = "Ponto",
+    CrosshairSize     = 10,
+    CrosshairColor    = Color3.fromRGB(255, 0, 0),
+}
+
+-- ================================================
+--  DRAWING
+-- ================================================
+local FOVCircle, DotCross, CircleCross, HLine, VLine
+local drawOk = pcall(function()
+    FOVCircle           = Drawing.new("Circle")
+    FOVCircle.Thickness = 2
+    FOVCircle.Filled    = false
+    DotCross            = Drawing.new("Circle")
+    DotCross.Filled     = true
+    DotCross.Visible    = false
+    CircleCross         = Drawing.new("Circle")
+    CircleCross.Filled  = false
+    CircleCross.Thickness = 1
+    CircleCross.Visible = false
+    HLine               = Drawing.new("Line")
+    HLine.Thickness     = 1
+    HLine.Visible       = false
+    VLine               = Drawing.new("Line")
+    VLine.Thickness     = 1
+    VLine.Visible       = false
+end)
+
+-- ================================================
+--  ANTI-AFK
+-- ================================================
+LocalPlayer.Idled:Connect(function()
+    if Cfg.AntiAfk then
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end
+end)
+
+-- ================================================
+--  AIMBOT
+-- ================================================
+local function getAimPart(char)
+    if Cfg.AimPart == "Torso" then
+        return char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("HumanoidRootPart")
+    end
+    return char:FindFirstChild(Cfg.AimPart)
+end
+
+local function findTarget()
+    local target  = nil
+    local maxDist = Cfg.FOVSize
+    local center  = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character then
+            if Cfg.TeamCheck and v.Team == LocalPlayer.Team then continue end
+            local part = getAimPart(v.Character)
+            local hum  = v.Character:FindFirstChild("Humanoid")
+            if part and hum and hum.Health > 0 then
+                if Cfg.TargetMode == "Selecionado" and v.Name ~= Cfg.SelectedPlayer then continue end
+                if Cfg.VisibleCheck then
+                    local rp = RaycastParams.new()
+                    rp.FilterType = Enum.RaycastFilterType.Exclude
+                    rp.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+                    local dir = part.Position - Camera.CFrame.Position
+                    local ray = workspace:Raycast(Camera.CFrame.Position, dir, rp)
+                    if ray and not ray.Instance:IsDescendantOf(v.Character) then continue end
+                end
+                local pos, onScreen = Camera:WorldToScreenPoint(part.Position)
+                if onScreen then
+                    local mag = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    if mag < maxDist then target = part; maxDist = mag end
+                end
+            end
+        end
+    end
+    return target
+end
+
+-- ================================================
+--  HITBOX EXTENDER
+-- ================================================
+task.spawn(function()
+    while true do
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if Cfg.HitboxExtender then
+                        hrp.Size = Vector3.new(Cfg.HitboxSize, Cfg.HitboxSize, Cfg.HitboxSize)
+                        hrp.Transparency = 0.75
+                        hrp.CanCollide = false
+                    else
+                        hrp.Size = Vector3.new(2, 2, 1)
+                        hrp.Transparency = 1
+                        hrp.CanCollide = false
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- ================================================
+--  ESP
+-- ================================================
+local function updateESP(player)
+    if player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+
+    local box = char:FindFirstChild("NexusESP_Box")
+    if Cfg.EspBox then
+        if not box then
+            box = Instance.new("Highlight")
+            box.Name = "NexusESP_Box"
+            box.FillTransparency = 1
+            box.OutlineColor = Color3.fromRGB(255, 0, 0)
+            box.OutlineTransparency = 0
+            box.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            box.Parent = char
+        end
+    else
+        if box then box:Destroy() end
+    end
+
+    local nameGui = char:FindFirstChild("NexusESP_NameGui")
+    if Cfg.EspName then
+        local head = char:FindFirstChild("Head")
+        if head then
+            if not nameGui then
+                nameGui = Instance.new("BillboardGui")
+                nameGui.Name = "NexusESP_NameGui"
+                nameGui.AlwaysOnTop = true
+                nameGui.Size = UDim2.new(0, 150, 0, 30)
+                nameGui.StudsOffset = Vector3.new(0, 2.5, 0)
+                local lbl = Instance.new("TextLabel")
+                lbl.BackgroundTransparency = 1
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.Font = Enum.Font.SourceSansBold
+                lbl.TextSize = 14
+                lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+                lbl.TextStrokeTransparency = 0
+                lbl.Parent = nameGui
+                nameGui.Parent = head
+            end
+            local t = nameGui:FindFirstChild("TextLabel")
+            if t then t.Text = player.Name end
+        end
+    else
+        if nameGui then nameGui:Destroy() end
+    end
+
+    local healthGui = char:FindFirstChild("NexusESP_HealthGui")
+    if Cfg.EspHealth then
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+        local hum = char:FindFirstChild("Humanoid")
+        if root and hum then
+            if not healthGui then
+                healthGui = Instance.new("BillboardGui")
+                healthGui.Name = "NexusESP_HealthGui"
+                healthGui.AlwaysOnTop = true
+                healthGui.Size = UDim2.new(0, 80, 0, 30)
+                healthGui.StudsOffset = Vector3.new(-2.8, 0, 0)
+                local lbl = Instance.new("TextLabel")
+                lbl.BackgroundTransparency = 1
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.Font = Enum.Font.SourceSansBold
+                lbl.TextSize = 13
+                lbl.TextStrokeTransparency = 0
+                lbl.TextXAlignment = Enum.TextXAlignment.Right
+                lbl.Parent = healthGui
+                healthGui.Parent = root
+            end
+            local lbl = healthGui:FindFirstChild("TextLabel")
+            if lbl then
+                local vida = math.floor(hum.Health)
+                lbl.Text = vida .. " HP"
+                if vida > 50 then lbl.TextColor3 = Color3.fromRGB(0, 255, 0)
+                elseif vida > 25 then lbl.TextColor3 = Color3.fromRGB(255, 165, 0)
+                else lbl.TextColor3 = Color3.fromRGB(255, 0, 0) end
+            end
+        end
+    else
+        if healthGui then healthGui:Destroy() end
+    end
+
+    if Cfg.EspSkeleton then
+        for _, child in pairs(char:GetChildren()) do
+            if child:IsA("BasePart") and child.Name ~= "HumanoidRootPart" then
+                if not child:FindFirstChild("NexusESP_Bone") then
+                    local bone = Instance.new("BoxHandleAdornment")
+                    bone.Name = "NexusESP_Bone"
+                    bone.Size = Vector3.new(0.2, child.Size.Y + 0.2, 0.2)
+                    if child.Name == "Head" then bone.Size = Vector3.new(0.4, 0.4, 0.4) end
+                    bone.Color3 = Color3.fromRGB(255, 255, 255)
+                    bone.AlwaysOnTop = true
+                    bone.ZIndex = 6
+                    bone.Adornee = child
+                    bone.Parent = child
+                end
+            end
+        end
+    else
+        for _, child in pairs(char:GetChildren()) do
+            if child:IsA("BasePart") then
+                local b = child:FindFirstChild("NexusESP_Bone")
+                if b then b:Destroy() end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        for _, p in pairs(Players:GetPlayers()) do
+            pcall(function() updateESP(p) end)
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- ================================================
+--  RENDERSTEP
+-- ================================================
+RunService.RenderStepped:Connect(function()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    if Cfg.SelectedColorName == "Colorido" then
+        local hue = (os.clock() % 3) / 3
+        Cfg.FOVColor = Color3.fromHSV(hue, 1, 1)
+    end
+
+    if drawOk and FOVCircle then
+        FOVCircle.Visible = Cfg.ShowFOV
+        FOVCircle.Radius = Cfg.FOVSize
+        FOVCircle.Color = Cfg.FOVColor
+        FOVCircle.Position = center
+    end
+
+    if drawOk then
+        if DotCross then DotCross.Visible = false end
+        if CircleCross then CircleCross.Visible = false end
+        if HLine then HLine.Visible = false end
+        if VLine then VLine.Visible = false end
+
+        if Cfg.Crosshair then
+            local cc = Cfg.CrosshairColor
+            local cs = Cfg.CrosshairSize
+            if Cfg.CrosshairType == "Ponto" and DotCross then
+                DotCross.Visible = true
+                DotCross.Radius = math.max(2, cs / 4)
+                DotCross.Color = cc
+                DotCross.Position = center
+            elseif Cfg.CrosshairType == "Círculo" and CircleCross then
+                CircleCross.Visible = true
+                CircleCross.Radius = cs
+                CircleCross.Color = cc
+                CircleCross.Position = center
+            elseif Cfg.CrosshairType == "Cruz" and HLine and VLine then
+                HLine.Visible = true; HLine.Color = cc
+                HLine.From = Vector2.new(center.X - cs, center.Y)
+                HLine.To = Vector2.new(center.X + cs, center.Y)
+                VLine.Visible = true; VLine.Color = cc
+                VLine.From = Vector2.new(center.X, center.Y - cs)
+                VLine.To = Vector2.new(center.X, center.Y + cs)
+            end
+        end
+    end
+
+    if Cfg.Aimbot then
+        local t = findTarget()
+        if t then
+            Camera.CFrame = Camera.CFrame:Lerp(CFrame.lookAt(Camera.CFrame.Position, t.Position), Cfg.Smoothing)
+        end
+    end
+end)
+
+-- ================================================
+--  TOKENS VISUAIS
+-- ================================================
+local C = {
+    BG      = Color3.fromRGB(12, 14, 22),
+    Panel   = Color3.fromRGB(18, 21, 34),
+    Card    = Color3.fromRGB(24, 28, 44),
+    Accent  = Color3.fromRGB(90, 80, 255),
+    Green   = Color3.fromRGB(40, 220, 110),
+    Red     = Color3.fromRGB(255, 65, 65),
+    TextW   = Color3.fromRGB(235, 238, 255),
+    TextMid = Color3.fromRGB(130, 140, 185),
+    TextDim = Color3.fromRGB(70, 80, 125),
+    Border  = Color3.fromRGB(36, 42, 68),
+}
+
+-- ================================================
+--  HELPERS DE UI
+-- ================================================
+local function corner(r, p)
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r); c.Parent = p
+end
+
+local function stroke(th, col, p)
+    local s = Instance.new("UIStroke"); s.Thickness = th; s.Color = col; s.Parent = p
+end
+
+local function newFrame(sz, pos, col, parent, rad)
+    local f = Instance.new("Frame")
+    f.Size = sz; f.Position = pos; f.BackgroundColor3 = col; f.BorderSizePixel = 0; f.Parent = parent
+    if rad then corner(rad, f) end
+    return f
+end
+
+local function newLabel(txt, size, col, parent, bold, xalign)
+    local l = Instance.new("TextLabel")
+    l.Text = txt; l.TextSize = size; l.TextColor3 = col
+    l.BackgroundTransparency = 1
+    l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
+    l.TextXAlignment = xalign or Enum.TextXAlignment.Left
+    l.Size = UDim2.new(1, 0, 0, size + 6); l.Parent = parent
+    return l
+end
+
+local function newToggle(parent, text, default, callback)
+    local card = newFrame(UDim2.new(1, -10, 0, 38), UDim2.new(0, 5, 0, 0), C.Card, parent, 8)
+    local lbl = newLabel(text, 12, C.TextW, card, false)
+    lbl.Position = UDim2.new(0, 10, 0, 10); lbl.Size = UDim2.new(0.65, 0, 0, 18)
+    local btnBg = newFrame(UDim2.new(0, 38, 0, 20), UDim2.new(1, -48, 0, 9), C.BG, card, 10)
+    local dot = newFrame(UDim2.new(0, 14, 0, 14), UDim2.new(0, 3, 0, 3), C.TextDim, btnBg, 7)
+    local state = default
+
+    local function update()
+        if state then
+            btnBg.BackgroundColor3 = C.Green
+            dot.Position = UDim2.new(0, 21, 0, 3); dot.BackgroundColor3 = C.TextW
+        else
+            btnBg.BackgroundColor3 = C.BG
+            dot.Position = UDim2.new(0, 3, 0, 3); dot.BackgroundColor3 = C.TextDim
+        end
+    end
+    update()
+
+    local function flip()
+        state = not state; update()
+        if callback then callback(state) end
+    end
+    btnBg.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then flip() end end)
+    card.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then flip() end end)
+    return {Set = function(v) state = v; update() end, Get = function() return state end}
+end
+
+local function newSlider(parent, text, min, max, default, callback)
+    local card = newFrame(UDim2.new(1, -10, 0, 55), UDim2.new(0, 5, 0, 0), C.Card, parent, 8)
+    local lbl = newLabel(text, 11, C.TextMid, card, false)
+    lbl.Position = UDim2.new(0, 10, 0, 4); lbl.Size = UDim2.new(1, -20, 0, 14)
+    local valLbl = newLabel(tostring(default), 10, C.TextW, card, false, Enum.TextXAlignment.Center)
+    valLbl.Position = UDim2.new(0, 0, 0, 20); valLbl.Size = UDim2.new(1, 0, 0, 12)
+    local bar = newFrame(UDim2.new(1, -20, 0, 4), UDim2.new(0, 10, 0, 38), C.BG, card, 2)
+    local fill = newFrame(UDim2.new((default - min) / (max - min), 0, 1, 0), UDim2.new(0, 0, 0, 0), C.Accent, bar, 2)
+    local value = default
+
+    local function update()
+        local pct = (value - min) / (max - min)
+        fill.Size = UDim2.new(pct, 0, 1, 0)
+        valLbl.Text = max <= 1 and string.format("%.2f", value) or tostring(math.floor(value))
+    end
+
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            local con
+            con = UserInputService.InputChanged:Connect(function(m)
+                if m.UserInputType == Enum.UserInputType.MouseMovement then
+                    local rel = math.clamp((m.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                    value = min + rel * (max - min)
+                    if max > 1 then value = math.floor(value) end
+                    update()
+                    if callback then callback(value) end
+                end
+            end)
+            UserInputService.InputEnded:Connect(function(e)
+                if e.UserInputType == Enum.UserInputType.MouseButton1 then con:Disconnect() end
+            end)
+        end
+    end)
+    return {Set = function(v) value = v; update() end, Get = function() return value end}
+end
+
+local function newDropdown(parent, text, options, default, callback)
+    local card = newFrame(UDim2.new(1, -10, 0, 38), UDim2.new(0, 5, 0, 0), C.Card, parent, 8)
+    local lbl = newLabel(text, 11, C.TextMid, card, false)
+    lbl.Position = UDim2.new(0, 10, 0, 3); lbl.Size = UDim2.new(1, -20, 0, 14)
+    local selected = default
+    local selBtn = Instance.new("TextButton")
+    selBtn.Size = UDim2.new(1, -20, 0, 18); selBtn.Position = UDim2.new(0, 10, 0, 17)
+    selBtn.BackgroundColor3 = C.BG; selBtn.Text = "▼  " .. selected
+    selBtn.TextColor3 = C.TextW; selBtn.Font = Enum.Font.Gotham; selBtn.TextSize = 11
+    selBtn.BorderSizePixel = 0; selBtn.Parent = card; corner(6, selBtn)
+    local expanded = false
+    local optFrame = newFrame(UDim2.new(1, -20, 0, 0), UDim2.new(0, 10, 0, 38), C.Card, card, 6)
+    optFrame.Visible = false; optFrame.ZIndex = 5
+    local optLayout = Instance.new("UIListLayout"); optLayout.Parent = optFrame
+
+    for _, opt in ipairs(options) do
+        local optBtn = Instance.new("TextButton")
+        optBtn.Size = UDim2.new(1, 0, 0, 22); optBtn.BackgroundColor3 = C.BG
+        optBtn.Text = opt; optBtn.TextColor3 = C.TextMid
+        optBtn.Font = Enum.Font.Gotham; optBtn.TextSize = 11; optBtn.BorderSizePixel = 0; optBtn.Parent = optFrame
+        optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = C.Accent; optBtn.TextColor3 = C.TextW end)
+        optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = C.BG; optBtn.TextColor3 = C.TextMid end)
+        optBtn.MouseButton1Click:Connect(function()
+            selected = opt; selBtn.Text = "▼  " .. selected
+            expanded = false; optFrame.Visible = false
+            card.Size = UDim2.new(1, -10, 0, 38)
+            if callback then callback(selected) end
+        end)
+    end
+    selBtn.MouseButton1Click:Connect(function()
+        expanded = not expanded; optFrame.Visible = expanded
+        if expanded then
+            optFrame.Size = UDim2.new(1, -20, 0, #options * 22)
+            card.Size = UDim2.new(1, -10, 0, 38 + #options * 22)
+        else
+            card.Size = UDim2.new(1, -10, 0, 38)
+        end
+    end)
+    return {Set = function(v) selected = v; selBtn.Text = "▼  " .. v end, Get = function() return selected end}
+end
+
+local function newColorPicker(parent, text, defaultName, callback)
+    local card = newFrame(UDim2.new(1, -10, 0, 52), UDim2.new(0, 5, 0, 0), C.Card, parent, 8)
+    local lbl = newLabel(text, 11, C.TextMid, card, false)
+    lbl.Position = UDim2.new(0, 10, 0, 4); lbl.Size = UDim2.new(1, -20, 0, 14)
+    local colorNames = {"Branco", "Vermelho", "Verde", "Azul", "Amarelo", "Rosa", "Roxo", "Ciano", "Colorido"}
+    local btnSize = 20; local s
